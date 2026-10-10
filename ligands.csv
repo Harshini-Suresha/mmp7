@@ -1,0 +1,7 @@
+name,smiles
+acetohydroxamic_acid,CC(=O)NO
+benzhydroxamic_acid,O=C(NO)c1ccccc1
+salicylhydroxamic_acid,O=C(NO)c1ccccc1O
+4-methoxybenzhydroxamic_acid,COc1ccc(C(=O)NO)cc1
+glycine_hydroxamate,NCC(=O)NO
+acetone_oxime,CC(C)=NO
