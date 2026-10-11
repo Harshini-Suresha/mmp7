@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    MMP7_MODE=docker
 
 # System deps: OpenBabel (docking pipeline) + libs RDKit needs on slim
 RUN apt-get update && apt-get install -y --no-install-recommends \

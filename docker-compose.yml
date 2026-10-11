@@ -11,3 +11,4 @@ services:
       - ./ligands_mmp7_top50.csv:/app/ligands_mmp7_top50.csv:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - MMP7_MODE=docker

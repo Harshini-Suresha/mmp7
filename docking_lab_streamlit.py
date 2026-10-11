@@ -2,10 +2,13 @@
 """MMP-7 Docking Lab — Streamlit companion.
 
 Deliberately NOT a copy of the website: the narrative report lives at
-https://harshini-suresha.github.io/mmp7/ . This app is the interactive side —
-analysis charts, CSV/PDB downloads, ChEMBL fetching and docking runs.
+https://harshini-suresha.github.io/mmp7/ .
 
-Tabs: Results · Analysis · Run pipeline · Poses
+Two interfaces from this one file, switched by the MMP7_MODE env var:
+  MMP7_MODE=docker  (set in the Dockerfile) → full local lab:
+      Results · Analysis · Run pipeline · Poses, green lab banner.
+  anything else (Streamlit Cloud default)   → hosted demo:
+      Explore · Poses · Get the pipeline, blue demo banner, no run controls.
 """
 import csv, glob, os, re, subprocess, sys, urllib.request, urllib.parse
 
@@ -20,6 +23,12 @@ CHEMBL_TARGET = "CHEMBL4073"  # human matrilysin (MMP-7)
 COLAB_URL = ("https://colab.research.google.com/github/Harshini-Suresha/"
              "mmp7/blob/main/notebooks/MMP7_docking.ipynb")
 SITE_URL = "https://harshini-suresha.github.io/mmp7/"
+NOTEBOOK_URL = "https://github.com/Harshini-Suresha/mmp7/blob/main/notebooks/MMP7_docking.ipynb"
+
+IS_DOCKER = os.environ.get("MMP7_MODE", "cloud").lower() == "docker"
+ACCENT = "#1f6f54" if IS_DOCKER else "#2563eb"
+MODE_LABEL = "Full local lab — docking engine on board" if IS_DOCKER else "Hosted demo — explore & download"
+MODE_EMOJI = "🧬" if IS_DOCKER else "☁️"
 
 
 def _engine():
@@ -32,11 +41,13 @@ def _engine():
     return all(importlib.util.find_spec(m) for m in ("vina", "meeko", "rdkit"))
 
 
-st.set_page_config(page_title="MMP-7 Docking Lab", page_icon="🧬", layout="wide")
-st.title("MMP-7 Docking Lab")
+st.set_page_config(page_title="MMP-7 Docking Lab", page_icon=MODE_EMOJI, layout="wide")
+st.title(f"{MODE_EMOJI} MMP-7 Docking Lab")
 st.caption("Matrilysin (PDB 1MMQ) · AutoDock Vina + Meeko/RDKit · Zn²⁺ chelation geometry")
-st.markdown(f"Interactive companion to the [full report]({SITE_URL}) — "
-            "charts and downloads live here, the narrative lives there.")
+st.markdown(f"<div style='background:{ACCENT}14;border:1px solid {ACCENT}66;border-radius:10px;"
+            f"padding:10px 14px;margin-bottom:6px'><b>{MODE_LABEL}</b> · "
+            f"companion to the <a href='{SITE_URL}' target='_blank'>full report</a>.</div>",
+            unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -94,55 +105,66 @@ def style_row(row):
     return [f"color: {color};" for _ in row]
 
 
-tab_results, tab_analysis, tab_run, tab_poses = st.tabs(["Results", "Analysis", "Run pipeline", "Poses"])
-
-with tab_results:
+def show_results():
     df = load_results()
     if df.empty:
-        st.info("No results yet — run the pipeline in the next tab.")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Ligands docked", len(df))
-        c2.metric("Best affinity", f"{df['affinity_kcal_mol'].min():.2f} kcal/mol")
-        c3.metric("Zn²⁺ contacts", int(df["zn_contact"].sum()))
-        c4.metric("Bidentate-like", int(df["bidentate_like"].sum()))
-        show = df.copy()
-        show["ligand"] = show["ligand"].astype(str)
-        st.dataframe(show.style.apply(style_row, axis=1),
-                     width="stretch", hide_index=True)
-        st.download_button("Download results.csv", df.to_csv(index=False),
-                           file_name="results.csv", mime="text/csv")
+        st.info("No results yet — run the pipeline in the lab.")
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ligands docked", len(df))
+    c2.metric("Best affinity", f"{df['affinity_kcal_mol'].min():.2f} kcal/mol")
+    c3.metric("Zn²⁺ contacts", int(df["zn_contact"].sum()))
+    c4.metric("Bidentate-like", int(df["bidentate_like"].sum()))
+    show = df.copy()
+    show["ligand"] = show["ligand"].astype(str)
+    st.dataframe(show.style.apply(style_row, axis=1),
+                 width="stretch", hide_index=True)
+    st.download_button("Download results.csv", df.to_csv(index=False),
+                       file_name="results.csv", mime="text/csv")
 
-with tab_analysis:
+
+def show_analysis():
     df = load_results()
     if df.empty:
-        st.info("No results yet — run the pipeline in the next tab.")
-    else:
-        n = st.slider("Top N ligands", 5, len(df), min(20, len(df)), step=5)
-        top = df.head(n)
-        st.subheader("Ranked affinity")
-        st.bar_chart(top.set_index("ligand")["affinity_kcal_mol"])
-        st.subheader("Affinity vs closest O–Zn distance")
-        d = df.copy()
-        d["zn"] = d["zn_contact"].map({1: "Zn contact", 0: "no contact"})
-        st.scatter_chart(d, x="min_O_Zn_A", y="affinity_kcal_mol", color="zn")
-        st.caption("More negative affinity is stronger. Colour is O within 2.6 Å of the catalytic zinc.")
-        pot = load_potency()
-        if not pot.empty:
-            m = df.merge(pot, on="ligand", how="inner")
-            if not m.empty:
-                st.subheader("Predicted affinity vs measured potency")
-                m["chel"] = m["bidentate_like"].map({1: "bidentate-like", 0: "other"})
-                st.scatter_chart(m, x="pchembl", y="affinity_kcal_mol", color="chel")
-                st.caption(f"Pearson r = {m['affinity_kcal_mol'].corr(m['pchembl']):.2f} "
-                           f"across {len(m)} ligands — docking rank only partly reproduces experiment.")
-        st.subheader("Bidentate-like poses")
-        bi = df[df["bidentate_like"] == 1]
-        st.write(f"{len(bi)} of {len(df)} poses chelate the zinc with 2+ oxygens.")
-        if not bi.empty:
-            st.dataframe(bi[["ligand", "affinity_kcal_mol", "min_O_Zn_A"]], hide_index=True)
+        st.info("No results yet — run the pipeline in the lab.")
+        return
+    n = st.slider("Top N ligands", 5, len(df), min(20, len(df)), step=5, key="analysis_n")
+    top = df.head(n)
+    st.subheader("Ranked affinity")
+    st.bar_chart(top.set_index("ligand")["affinity_kcal_mol"])
+    st.subheader("Affinity vs closest O–Zn distance")
+    d = df.copy()
+    d["zn"] = d["zn_contact"].map({1: "Zn contact", 0: "no contact"})
+    st.scatter_chart(d, x="min_O_Zn_A", y="affinity_kcal_mol", color="zn")
+    st.caption("More negative affinity is stronger. Colour is O within 2.6 Å of the catalytic zinc.")
+    pot = load_potency()
+    if not pot.empty:
+        m = df.merge(pot, on="ligand", how="inner")
+        if not m.empty:
+            st.subheader("Predicted affinity vs measured potency")
+            m["chel"] = m["bidentate_like"].map({1: "bidentate-like", 0: "other"})
+            st.scatter_chart(m, x="pchembl", y="affinity_kcal_mol", color="chel")
+            st.caption(f"Pearson r = {m['affinity_kcal_mol'].corr(m['pchembl']):.2f} "
+                       f"across {len(m)} ligands — docking rank only partly reproduces experiment.")
+    st.subheader("Bidentate-like poses")
+    bi = df[df["bidentate_like"] == 1]
+    st.write(f"{len(bi)} of {len(df)} poses chelate the zinc with 2+ oxygens.")
+    if not bi.empty:
+        st.dataframe(bi[["ligand", "affinity_kcal_mol", "min_O_Zn_A"]], hide_index=True)
 
-with tab_run:
+
+def show_poses():
+    poses = sorted(glob.glob(os.path.join(POSES, "*_complex.pdb")))
+    if not poses:
+        st.info("No poses yet.")
+        return
+    st.write(f"{len(poses)} receptor–ligand complexes in `poses/`")
+    pick = st.selectbox("Download a complex", [os.path.basename(p) for p in poses])
+    with open(os.path.join(POSES, pick), "rb") as f:
+        st.download_button(f"Download {pick}", f, file_name=pick)
+
+
+def show_run():
     st.subheader("1. Fetch known MMP-7 actives from ChEMBL")
     f1, f2, _ = st.columns([2, 1, 3])
     n_fetch = f1.slider("Top N actives", 10, 570, 50, step=10)
@@ -161,13 +183,8 @@ with tab_run:
     st.subheader("2. Run the dock")
     HAS_ENGINE = _engine()
     if not HAS_ENGINE:
-        st.warning("Docking engine (Vina/RDKit/Meeko) is not installed in this hosted app, "
-                   "so docking can't run here. The Results tab above shows the precomputed screen. "
-                   "To dock yourself:")
-        st.markdown(f"- **Colab (no setup):** [MMP7_docking.ipynb]({COLAB_URL})\n"
-                    "- **Docker:** `docker compose up --build`, then open http://localhost:8501\n"
-                    "- **Local:** `pip install -r requirements-dock.txt`, "
-                    "`streamlit run docking_lab_streamlit.py`")
+        st.warning("Docking engine (Vina/RDKit/Meeko) is not installed here. "
+                   "Use the Docker lab, Colab, or a local run instead.")
     opt_ligands = [f for f in os.listdir(HERE) if f.endswith(".csv")]
     r1, r2, r3, r4, r5 = st.columns([3, 1, 1, 1, 1])
     lig = r1.selectbox("Ligands file", opt_ligands, index=opt_ligands.index("ligands_mmp7_top50.csv") if "ligands_mmp7_top50.csv" in opt_ligands else 0)
@@ -187,12 +204,35 @@ with tab_run:
             st.error(f"Run failed (exit {p.returncode})")
             st.code((p.stderr or p.stdout)[-2000:])
 
-with tab_poses:
-    poses = sorted(glob.glob(os.path.join(POSES, "*_complex.pdb")))
-    if not poses:
-        st.info("No poses yet.")
-    else:
-        st.write(f"{len(poses)} receptor–ligand complexes in `poses/`")
-        pick = st.selectbox("Download a complex", [os.path.basename(p) for p in poses])
-        with open(os.path.join(POSES, pick), "rb") as f:
-            st.download_button(f"Download {pick}", f, file_name=pick)
+
+def show_get_pipeline():
+    st.write("Docking can't run on this hosted demo — pick a way to run it:")
+    st.link_button("▶ Open in Colab (no setup)", COLAB_URL)
+    st.link_button("Notebook file on GitHub", NOTEBOOK_URL)
+    st.code("docker compose up --build  # full lab at http://localhost:8501", language="bash")
+    st.code("pip install -r requirements-dock.txt\nstreamlit run docking_lab_streamlit.py",
+            language="bash")
+
+
+if IS_DOCKER:
+    tab_results, tab_analysis, tab_run, tab_poses = st.tabs(
+        ["Results", "Analysis", "Run pipeline", "Poses"])
+    with tab_results:
+        show_results()
+    with tab_analysis:
+        show_analysis()
+    with tab_run:
+        show_run()
+    with tab_poses:
+        show_poses()
+else:
+    tab_explore, tab_poses, tab_get = st.tabs(
+        ["Explore", "Poses", "Get the pipeline"])
+    with tab_explore:
+        show_results()
+        st.divider()
+        show_analysis()
+    with tab_poses:
+        show_poses()
+    with tab_get:
+        show_get_pipeline()
