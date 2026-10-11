@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""MMP-7 Docking Lab — Streamlit edition.
+"""MMP-7 Docking Lab — Streamlit companion.
 
-The same screen as the website overlay + Flask backend, as a Streamlit app.
+Deliberately NOT a copy of the website: the narrative report lives at
+https://harshini-suresha.github.io/mmp7/ . This app is the interactive side —
+analysis charts, CSV/PDB downloads, ChEMBL fetching and docking runs.
 
-    streamlit run docking_lab_streamlit.py
-
-Tabs: Results · Run pipeline · Poses · How it works
+Tabs: Results · Analysis · Run pipeline · Poses
 """
 import csv, glob, os, re, subprocess, sys, urllib.request, urllib.parse
 
@@ -14,12 +14,12 @@ import streamlit as st
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "results.csv")
-LAB = os.path.join(HERE, "lab_paste.txt")
 POSES = os.path.join(HERE, "poses")
 SCRIPT = os.path.join(HERE, "dock_mmp7.py")
 CHEMBL_TARGET = "CHEMBL4073"  # human matrilysin (MMP-7)
 COLAB_URL = ("https://colab.research.google.com/github/Harshini-Suresha/"
              "mmp7/blob/main/notebooks/MMP7_docking.ipynb")
+SITE_URL = "https://harshini-suresha.github.io/mmp7/"
 
 
 def _engine():
@@ -31,9 +31,12 @@ def _engine():
     import importlib.util
     return all(importlib.util.find_spec(m) for m in ("vina", "meeko", "rdkit"))
 
-st.set_page_config(page_title="MMP-7 Docking Lab", page_icon="\U0001f9ec", layout="wide")
+
+st.set_page_config(page_title="MMP-7 Docking Lab", page_icon="🧬", layout="wide")
 st.title("MMP-7 Docking Lab")
-st.caption("Matrilysin (PDB 1MMQ) \u00b7 AutoDock Vina + Meeko/RDKit \u00b7 Zn\u00b2\u207a chelation geometry")
+st.caption("Matrilysin (PDB 1MMQ) · AutoDock Vina + Meeko/RDKit · Zn²⁺ chelation geometry")
+st.markdown(f"Interactive companion to the [full report]({SITE_URL}) — "
+            "charts and downloads live here, the narrative lives there.")
 
 
 @st.cache_data(show_spinner=False)
@@ -42,6 +45,14 @@ def load_results():
         return pd.DataFrame(columns=["ligand", "affinity_kcal_mol", "min_O_Zn_A",
                                      "n_O_within_cutoff", "zn_contact", "bidentate_like"])
     return pd.read_csv(RESULTS).sort_values("affinity_kcal_mol")
+
+
+@st.cache_data(show_spinner=False)
+def load_potency():
+    p = os.path.join(HERE, "potency.csv")
+    if not os.path.exists(p):
+        return pd.DataFrame(columns=["ligand", "pchembl"])
+    return pd.read_csv(p)[["ligand", "pchembl"]].drop_duplicates("ligand")
 
 
 @st.cache_data(show_spinner=False)
@@ -83,25 +94,53 @@ def style_row(row):
     return [f"color: {color};" for _ in row]
 
 
-tab_results, tab_run, tab_poses, tab_how = st.tabs(["Results", "Run pipeline", "Poses", "How it works"])
+tab_results, tab_analysis, tab_run, tab_poses = st.tabs(["Results", "Analysis", "Run pipeline", "Poses"])
 
 with tab_results:
     df = load_results()
     if df.empty:
-        st.info("No results yet \u2014 run the pipeline in the next tab.")
+        st.info("No results yet — run the pipeline in the next tab.")
     else:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Ligands docked", len(df))
         c2.metric("Best affinity", f"{df['affinity_kcal_mol'].min():.2f} kcal/mol")
-        c3.metric("Zn\u00b2\u207a contacts", int(df["zn_contact"].sum()))
+        c3.metric("Zn²⁺ contacts", int(df["zn_contact"].sum()))
         c4.metric("Bidentate-like", int(df["bidentate_like"].sum()))
         show = df.copy()
         show["ligand"] = show["ligand"].astype(str)
         st.dataframe(show.style.apply(style_row, axis=1),
                      width="stretch", hide_index=True)
-        if os.path.exists(LAB):
-            with st.expander("lab_paste.txt (copy into the Docking Lab)"):
-                st.code(open(LAB).read(), language=None)
+        st.download_button("Download results.csv", df.to_csv(index=False),
+                           file_name="results.csv", mime="text/csv")
+
+with tab_analysis:
+    df = load_results()
+    if df.empty:
+        st.info("No results yet — run the pipeline in the next tab.")
+    else:
+        n = st.slider("Top N ligands", 5, len(df), min(20, len(df)), step=5)
+        top = df.head(n)
+        st.subheader("Ranked affinity")
+        st.bar_chart(top.set_index("ligand")["affinity_kcal_mol"])
+        st.subheader("Affinity vs closest O–Zn distance")
+        d = df.copy()
+        d["zn"] = d["zn_contact"].map({1: "Zn contact", 0: "no contact"})
+        st.scatter_chart(d, x="min_O_Zn_A", y="affinity_kcal_mol", color="zn")
+        st.caption("More negative affinity is stronger. Colour is O within 2.6 Å of the catalytic zinc.")
+        pot = load_potency()
+        if not pot.empty:
+            m = df.merge(pot, on="ligand", how="inner")
+            if not m.empty:
+                st.subheader("Predicted affinity vs measured potency")
+                m["chel"] = m["bidentate_like"].map({1: "bidentate-like", 0: "other"})
+                st.scatter_chart(m, x="pchembl", y="affinity_kcal_mol", color="chel")
+                st.caption(f"Pearson r = {m['affinity_kcal_mol'].corr(m['pchembl']):.2f} "
+                           f"across {len(m)} ligands — docking rank only partly reproduces experiment.")
+        st.subheader("Bidentate-like poses")
+        bi = df[df["bidentate_like"] == 1]
+        st.write(f"{len(bi)} of {len(df)} poses chelate the zinc with 2+ oxygens.")
+        if not bi.empty:
+            st.dataframe(bi[["ligand", "affinity_kcal_mol", "min_O_Zn_A"]], hide_index=True)
 
 with tab_run:
     st.subheader("1. Fetch known MMP-7 actives from ChEMBL")
@@ -138,7 +177,7 @@ with tab_run:
     if r5.button("Run docking", type="primary", disabled=not HAS_ENGINE):
         cmd = [sys.executable, SCRIPT, "--pdb", pdb, "--ligands", lig,
                "--exhaustiveness", str(int(ex)), "--confs", str(int(cf))]
-        with st.spinner("Docking in progress \u2014 this can take minutes to hours depending on panel size\u2026"):
+        with st.spinner("Docking in progress — this can take minutes to hours depending on panel size…"):
             p = _run_cmd(cmd)
         if p.returncode == 0:
             st.success("Run finished!")
@@ -153,20 +192,7 @@ with tab_poses:
     if not poses:
         st.info("No poses yet.")
     else:
-        st.write(f"{len(poses)} receptor\u2013ligand complexes in `poses/`")
-        st.write("\n".join(os.path.basename(p) for p in poses[:200]))
-
-with tab_how:
-    st.markdown(
-        f"""
-- **Receptor** \u2014 PDB `1MMQ` (human matrilysin, 1.9 \u00c5, hydroxamate inhibitor); grid box centred on
-  the co-crystal inhibitor; catalytic Zn expected at the site.
-- **Scoring** \u2014 AutoDock Vina `vina` 1.2.5 (no explicit metal term). Use affinity **and** the O\u2013Zn
-  columns as separate evidence.
-- **Columns** \u2014 `min_O_Zn_A` closest ligand O to catalytic Zn; `n_O_within_cutoff` number \u2264 2.6 \u00c5;
-  `zn_contact` \u22651; `bidentate_like` \u22652.
-- **ChEMBL** \u2014 target `{CHEMBL_TARGET}` (human matrilysin), best pChEMBL activity per molecule.
-- **Web version** \u2014 `python docking_server.py` then open http://127.0.0.1:8765/, or the
-  MMP-7 Docking Lab button on the at1r site; Colab notebook in `notebooks/MMP7_docking.ipynb`.
-"""
-    )
+        st.write(f"{len(poses)} receptor–ligand complexes in `poses/`")
+        pick = st.selectbox("Download a complex", [os.path.basename(p) for p in poses])
+        with open(os.path.join(POSES, pick), "rb") as f:
+            st.download_button(f"Download {pick}", f, file_name=pick)
