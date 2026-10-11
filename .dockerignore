@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.DS_Store
+1MMQ.pdb
+poses/
+*.log
+server_run.log

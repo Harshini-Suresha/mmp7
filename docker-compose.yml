@@ -1,0 +1,13 @@
+services:
+  docking-lab:
+    build: .
+    image: mmp7-docking-lab:latest
+    ports:
+      - "8501:8501"
+    volumes:
+      # persist results + poses back to the host
+      - ./results.csv:/app/results.csv
+      - ./poses:/app/poses
+      - ./ligands_mmp7_top50.csv:/app/ligands_mmp7_top50.csv:ro
+    environment:
+      - PYTHONUNBUFFERED=1
