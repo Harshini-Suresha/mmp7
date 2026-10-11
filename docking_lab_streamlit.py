@@ -18,6 +18,18 @@ LAB = os.path.join(HERE, "lab_paste.txt")
 POSES = os.path.join(HERE, "poses")
 SCRIPT = os.path.join(HERE, "dock_mmp7.py")
 CHEMBL_TARGET = "CHEMBL4073"  # human matrilysin (MMP-7)
+COLAB_URL = ("https://colab.research.google.com/github/Harshini-Suresha/"
+             "mmp7/blob/main/notebooks/MMP7_docking.ipynb")
+
+
+def _engine():
+    """True when the docking stack (Vina/RDKit/Meeko) is importable.
+
+    Streamlit Cloud installs only requirements.txt (pure wheels); the engine
+    lives in requirements-dock.txt for Docker/local runs.
+    """
+    import importlib.util
+    return all(importlib.util.find_spec(m) for m in ("vina", "meeko", "rdkit"))
 
 st.set_page_config(page_title="MMP-7 Docking Lab", page_icon="\U0001f9ec", layout="wide")
 st.title("MMP-7 Docking Lab")
@@ -108,13 +120,22 @@ with tab_run:
             st.error(str(e))
 
     st.subheader("2. Run the dock")
+    HAS_ENGINE = _engine()
+    if not HAS_ENGINE:
+        st.warning("Docking engine (Vina/RDKit/Meeko) is not installed in this hosted app, "
+                   "so docking can't run here. The Results tab above shows the precomputed screen. "
+                   "To dock yourself:")
+        st.markdown(f"- **Colab (no setup):** [MMP7_docking.ipynb]({COLAB_URL})\n"
+                    "- **Docker:** `docker compose up --build`, then open http://localhost:8501\n"
+                    "- **Local:** `pip install -r requirements-dock.txt`, "
+                    "`streamlit run docking_lab_streamlit.py`")
     opt_ligands = [f for f in os.listdir(HERE) if f.endswith(".csv")]
     r1, r2, r3, r4, r5 = st.columns([3, 1, 1, 1, 1])
     lig = r1.selectbox("Ligands file", opt_ligands, index=opt_ligands.index("ligands_mmp7_top50.csv") if "ligands_mmp7_top50.csv" in opt_ligands else 0)
     pdb = r2.text_input("PDB", "1MMQ")
     ex = r3.number_input("Exhaustiveness", 1, 32, 8)
     cf = r4.number_input("Conformers", 1, 20, 3)
-    if r5.button("Run docking", type="primary"):
+    if r5.button("Run docking", type="primary", disabled=not HAS_ENGINE):
         cmd = [sys.executable, SCRIPT, "--pdb", pdb, "--ligands", lig,
                "--exhaustiveness", str(int(ex)), "--confs", str(int(cf))]
         with st.spinner("Docking in progress \u2014 this can take minutes to hours depending on panel size\u2026"):

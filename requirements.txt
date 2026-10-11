@@ -1,9 +1,8 @@
+# Streamlit Cloud (share.streamlit.io) reads this file. Keep it to pure-wheel
+# packages only: the docking engine (vina) has no Python 3.14 wheel and needs
+# Boost headers to compile, so it lives in requirements-dock.txt instead
+# (used by the Dockerfile and local runs). The "Run pipeline" tab in the app
+# detects the missing engine and points at Colab / Docker / local instead.
 streamlit>=1.49
 pandas>=2.0
 numpy>=1.24
-scipy>=1.10
-rdkit>=2023.9.1
-meeko>=0.5
-vina>=1.2.5
-gemmi>=0.6
-flask>=3.0

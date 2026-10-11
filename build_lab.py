@@ -20,7 +20,8 @@ RESULTS = os.path.join(HERE, "results.csv")
 STANDALONE = os.path.join(HERE, "docking_lab.html")
 AT1R_INDEX = "/Users/harshinisuresha/Desktop/at1r-nanobody-7T83/index.html"
 COLAB_URL = ("https://colab.research.google.com/github/Harshini-Suresha/"
-             "at1r-nanobody-7T83/blob/main/notebooks/MMP7_docking.ipynb")
+             "mmp7/blob/main/notebooks/MMP7_docking.ipynb")
+STREAMLIT_URL = "https://mmp7-inhibition.streamlit.app/"
 
 START = "<!-- MMP7-DOCKING-LAB:START -->"
 END = "<!-- MMP7-DOCKING-LAB:END -->"
@@ -149,8 +150,9 @@ def section_html(rows, st):
    </div>
    <div class="mmp7-run">
     <span class="mmp7-runlabel">Run the pipeline</span>
-    <a class="mmp7-btn primary" href="{COLAB_URL}" target="_blank" rel="noopener">&#9654; Open in Colab</a>
-    <button class="mmp7-btn ghost" id="mmp7-runlocal" type="button" title="Requires the local Flask backend">Run locally</button>
+     <a class="mmp7-btn primary" href="{COLAB_URL}" target="_blank" rel="noopener">&#9654; Open in Colab</a>
+     <a class="mmp7-btn ghost" href="{STREAMLIT_URL}" target="_blank" rel="noopener">Streamlit lab</a>
+     <button class="mmp7-btn ghost" id="mmp7-runlocal" type="button" title="Requires the local Flask backend">Run locally</button>
     <button class="mmp7-btn ghost" id="mmp7-refresh" type="button">Refresh results</button>
     <p class="mmp7-status" id="mmp7-status">Showing precomputed results.</p>
    </div>

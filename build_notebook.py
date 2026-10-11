@@ -8,7 +8,7 @@ import json, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "dock_mmp7.py")
-OUT = "/Users/harshinisuresha/Desktop/at1r-nanobody-7T83/notebooks/MMP7_docking.ipynb"
+OUT = os.path.join(HERE, "notebooks", "MMP7_docking.ipynb")
 
 DOCK = open(SCRIPT).read()
 
@@ -60,8 +60,8 @@ Screens known MMP-7 inhibitors (ChEMBL target **CHEMBL4073**) against the
 catalytic site of human matrilysin (**PDB 1MMQ**, 1.9 Å, hydroxamate inhibitor)
 with **AutoDock Vina**, checking O→Zn chelation geometry.
 
-Repo: https://github.com/Harshini-Suresha/at1r-nanobody-7T83
-Pipeline source: `mmp7/dock_mmp7.py`
+Repo: https://github.com/Harshini-Suresha/mmp7
+Pipeline source: `dock_mmp7.py`
 
 **Run-order note:** the first two cells set up the environment. Cell 1 restarts
 the Colab runtime once — just re-run the notebook (or press "run all") after it
